@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:untitled/login.dart';
 import 'package:untitled/wrapper.dart';
 import 'package:get/get.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Signup extends StatefulWidget {
   const Signup({super.key});
@@ -15,6 +16,7 @@ class Signup extends StatefulWidget {
 class _SignupState extends State<Signup> {
   TextEditingController email = TextEditingController();
   TextEditingController password = TextEditingController();
+  TextEditingController displayName = TextEditingController();
   bool isLoading = false;
 
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
@@ -44,11 +46,15 @@ class _SignupState extends State<Signup> {
       );
 
       // Initialize user data in the Realtime Database
-      await _databaseReference.child('users').child(userCredential.user!.uid).set({
-        'favorites': [],
-        'recentlyViewed': [],
-      });
-
+      User? user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // Save user details to Firestore
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'displayName': displayName.text.trim(),
+          'favorites': [], // Initialize favorites as an empty array
+          'recentlyViewed': [], // Optionally initialize recentlyViewed
+        });
+      }
       Get.offAll(Wrapper());
     } catch (e) {
       // Show an error message
@@ -64,7 +70,7 @@ class _SignupState extends State<Signup> {
   @override
   Widget build(BuildContext context) {
     return isLoading
-        ? Center(child: CircularProgressIndicator())
+        ? Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.red)))
         : Scaffold(
       backgroundColor: Colors.red.shade800, // Set background color to red
       body: Stack(
@@ -147,6 +153,18 @@ class _SignupState extends State<Signup> {
                     ),
                     SizedBox(height: 20), // Space between text and input fields
                     // Email input
+                    TextField(
+                      controller: displayName,
+                      decoration: InputDecoration(
+                        hintText: "Enter Name",
+                        filled: true,
+                        fillColor: Colors.grey[50], // Light background for input fields
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 20),
                     TextField(
                       controller: email,
                       keyboardType: TextInputType.emailAddress,

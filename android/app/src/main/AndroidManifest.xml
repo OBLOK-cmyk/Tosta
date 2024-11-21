@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.example.untitled">
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -10,15 +12,22 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Permissions for Android 13+ (SDK 33) and below -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+
+    <!-- Permissions for Android 14+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+
+    <!-- Write permission for storage -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 
 
 
     <application
-        android:label="Totspa"
+        android:label="Tosta"
         android:name="${applicationName}"
-        android:icon="@mipmap/touristspot">
+        android:icon="@mipmap/tosta_icon">
         <activity
             android:name=".MainActivity"
             android:exported="true"
