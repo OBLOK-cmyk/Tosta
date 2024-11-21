@@ -7,6 +7,8 @@ import 'package:untitled/pages/Map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_analytics/observer.dart';
 
 // Model for Tourist Spot
 class TouristSpot {
@@ -40,167 +42,144 @@ class _VenicePageState extends State<VenicePage> {
   bool isGoNowExpanded = false; // State for expanding 'Go Now' section
   bool isHistory = false; // State for expanding 'History' section
   late bool isFavorite; // State for favorite status
-  double _currentRating = 0.0; // Current rating given by the user
-  double _averageRating = 0.0; // Average rating of the tourist spot
+  int _userRating = 0;
   int _totalReviews = 0; // Total number of reviews for the tourist spot
+  double? averageRating; // Variable to store the average rating
   final FirebaseAuth _auth = FirebaseAuth.instance; // Firebase Authentication instance
   final FirebaseFirestore _firestore = FirebaseFirestore.instance; // Firestore instance
+  bool _hasRated = false;
+  final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
+
+  Future<int> fetchVisitCountFromDatabase(String spotId) async {
+    try {
+      DocumentSnapshot snapshot = await FirebaseFirestore.instance
+          .collection('tourist_spots') // Your collection name
+          .doc(spotId)
+          .get();
+
+      return snapshot['visitCount'] ?? 0; // Return 0 if not found
+    } catch (e) {
+      print('Error fetching visit count: $e');
+      return 0; // Handle the error as needed
+    }
+  }
+  Future<void> updateVisitCountInDatabase(String spotId, int newCount) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('tourist_spots') // Your collection name
+          .doc(spotId)
+          .update({'visitCount': newCount});
+    } catch (e) {
+      print('Error updating visit count: $e'); // Handle the error as needed
+    }
+  }
+
 
   @override
   void initState() {
     super.initState();
     isFavorite = widget.spot.isFavorite; // Initialize favorite status
-    _loadUserRating(); // Load the user's previous rating when initializing
-    _fetchAverageRating(); // Fetch the average rating when the page is initialized
-  }
+    _checkIfUserHasRated();
+    _fetchAverageRating(); // Fetch the average rating when the page loads
 
-  // Method to save rating to Firestore
-  void _saveRating(double rating) async {
+  }
+  Future<void> _fetchAverageRating() async {
     try {
-      User? user = _auth.currentUser; // Get the current user
-      if (user != null) {
-        // Query Firestore to check if the user has already rated this spot
-        QuerySnapshot ratingSnapshot = await _firestore
-            .collection('ratings')
-            .where('userId', isEqualTo: user.uid)
-            .where('spotId', isEqualTo: widget.spot.id)
-            .get();
-
-        if (ratingSnapshot.docs.isNotEmpty) {
-          // Update existing rating
-          String docId = ratingSnapshot.docs.first.id;
-          await _firestore.collection('ratings').doc(docId).update({
-            'rating': rating,
-            'timestamp': FieldValue.serverTimestamp(),
-          });
-        } else {
-          // Add new rating
-          await _firestore.collection('ratings').add({
-            'userId': user.uid,
-            'spotId': widget.spot.id,
-            'rating': rating,
-            'timestamp': FieldValue.serverTimestamp(),
-          });
-        }
-
-        _fetchAverageRating(); // Refresh the average rating after saving
-        _updateTouristSpotData(); // Update the tourist spot data after rating
-      } else {
-        // Prompt user to log in if they are not authenticated
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("You need to log in to rate.")),
-        );
-      }
-    } catch (e) {
-      print("Failed to save rating: $e");
-      // Show error message in case of failure
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error saving your rating. Please try again.")),
-      );
-    }
-  }
-
-  // Load user's previous rating for this spot
-  void _loadUserRating() async {
-    User? user = _auth.currentUser;
-    if (user != null) {
-      // Query Firestore for the user's rating
-      QuerySnapshot ratingSnapshot = await _firestore
-          .collection('ratings')
-          .where('userId', isEqualTo: user.uid)
-          .where('spotId', isEqualTo: widget.spot.id)
+      DocumentSnapshot snapshot = await _firestore
+          .collection('tourist_spots')
+          .doc('venice_grand_canal') // Make sure this matches the document ID
           .get();
-
-      if (ratingSnapshot.docs.isNotEmpty) {
-        setState(() {
-          _currentRating = ratingSnapshot.docs.first['rating']; // Set current rating
-        });
-      }
-    }
-  }
-
-  // Fetch average rating for this tourist spot
-  void _fetchAverageRating() async {
-    try {
-      QuerySnapshot snapshot = await _firestore
-          .collection('ratings')
-          .where('spotId', isEqualTo: widget.spot.id)
-          .get();
-
-      double totalRating = 0.0;
-      int totalCount = snapshot.docs.length;
-
-      snapshot.docs.forEach((doc) {
-        totalRating += doc['rating']; // Accumulate ratings
-      });
 
       setState(() {
-        _totalReviews = totalCount; // Update total reviews count
-        _averageRating = totalCount > 0 ? totalRating / totalCount : 0.0; // Calculate average rating
+        averageRating = snapshot['averageRating']?.toDouble() ?? 0.0; // Fetch and set averageRating
       });
     } catch (e) {
       print("Failed to fetch average rating: $e");
     }
   }
+  // Check if the user has already rated this spot
+  Future<void> _checkIfUserHasRated() async {
+    String userId = _auth.currentUser!.uid;
+    QuerySnapshot snapshot = await _firestore
+        .collection('ratings')
+        .where('spotId', isEqualTo: widget.spot.id)
+        .where('userId', isEqualTo: userId)
+        .get();
 
+    if (snapshot.docs.isNotEmpty) {
+      setState(() {
+        _hasRated = true;
+        _userRating = snapshot.docs.first['rating'];
+      });
+    }
+  }
+
+  Future<void> _onStarTap(int rating) async {
+    if (_hasRated) return; // Prevent further rating if the user has already rated
+
+    setState(() {
+      _userRating = rating;
+      _hasRated = true;
+    });
+
+    String userId = _auth.currentUser!.uid;
+
+    // Save the rating to Firestore
+    await _firestore.collection('ratings').add({
+      'rating': rating,
+      'spotId': widget.spot.id,
+      'userId': userId,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+    // Log rating event in Firebase Analytics
+    await _analytics.logEvent(
+      name: 'spot_rated',
+      parameters: {
+        'rating': rating,
+        'spot_id': widget.spot.id,
+        'user_id': userId,
+      },
+    );
+
+    // Update average rating in tourist_spots
+    await _updateAverageRating();
+  }
+// Calculate and update the average rating
+  Future<void> _updateAverageRating() async {
+    QuerySnapshot snapshot = await _firestore
+        .collection('ratings')
+        .where('spotId', isEqualTo: "1")
+        .get();
+
+    double totalRating = 0;
+    int ratingCount = snapshot.docs.length;
+
+    for (var doc in snapshot.docs) {
+      totalRating += doc['rating'];
+    }
+
+    double averageRating = totalRating / ratingCount;
+
+    await _firestore.collection('tourist_spots').doc("venice_grand_canal").update({
+      'averageRating': averageRating,
+    });
+  }
+
+  void _incrementVisitCount() async {
+    try {
+      await _firestore.collection('tourist_spots').doc(widget.spot.id).update({
+        'visitCount': FieldValue.increment(1),
+      });
+    } catch (e) {
+      print("Failed to increment visit count: $e");
+    }
+  }
   // Toggle favorite status
   void _onFavoriteTap() {
     setState(() {
       isFavorite = !isFavorite; // Change favorite status
       widget.spot.isFavorite = isFavorite; // Update favorite status in the tourist spot
     });
-  }
-
-  // Build star rating UI
-  Widget _buildStarRating() {
-    return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(5, (index) {
-          return IconButton(
-            icon: Icon(
-              index < _currentRating ? Icons.star : Icons.star_border,
-              color: Colors.amber,
-            ),
-            onPressed: () {
-              setState(() {
-                _currentRating = index + 1; // Set current rating based on the star clicked
-              });
-            },
-          );
-        }));
-  }
-
-  // Method to submit the rating
-  void _submitRating() async {
-    try {
-      // Update the tourist spot document in Firestore with new rating data
-      await _firestore.collection('tourist_spots').doc('venice_grand_canal').set({
-        'averageRating': _averageRating,
-        'category': 'Cultural',
-        'name': widget.spot.name,
-        'reviewsCount': _totalReviews,
-      }, SetOptions(merge: true)); // Use merge to avoid overwriting existing data
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Rating submitted successfully!")),
-      );
-    } catch (e) {
-      print("Failed to submit rating: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error submitting your rating. Please try again.")),
-      );
-    }
-  }
-
-  // Update tourist spot data for total reviews
-  void _updateTouristSpotData() async {
-    try {
-      await _firestore.collection('tourist_spots').doc('venice_grand_canal').update({
-        'totalReviews': FieldValue.increment(1), // Increment total reviews
-      });
-    } catch (e) {
-      print("Failed to update tourist spot data: $e");
-    }
   }
 
   // Handle navigation bar tap events
@@ -261,67 +240,137 @@ class _VenicePageState extends State<VenicePage> {
             ),
           ),
           SizedBox(height: 10),
-          Text(
-            'Average Rating: ${_averageRating.toStringAsFixed(1)}',
-            style: TextStyle(color: Colors.grey),
-          ),
-          SizedBox(height: 10),
-          Text(
-            widget.spot.description, // Tourist spot description
-            style: TextStyle(color: Colors.black),
+          Row(
+            children: [
+              Icon(
+                Icons.star, // Star icon
+                color: Colors.amber, // Set the color to yellow
+                size: 20, // Adjust the size as needed
+              ),
+              SizedBox(width: 4), // Add spacing between the icon and rating text
+              Text(
+                '${averageRating?.toStringAsFixed(1) ?? 'Loading...'}', // Display the average rating
+                style: TextStyle(color: Colors.grey, fontSize: 16), // Adjust style as needed
+              ),
+            ],
           ),
           SizedBox(height: 20),
-          _buildStarRating(), // Star rating UI
-          SizedBox(height: 20),
-          // Submit button for the rating
-          ElevatedButton(
-            onPressed: () {
-              _submitRating(); // Call the submit rating method
-            },
-            child: Text("Submit Rating"),
-            style: ElevatedButton.styleFrom(
-              padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-              backgroundColor: Colors.blue, // Button color
-              foregroundColor: Colors.white, // Text color
-            ),
+          // Star Rating
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(5, (index) {
+              return IconButton(
+                icon: Icon(
+                  Icons.star,
+                  color: index < _userRating ? Colors.amber : Colors.grey,
+                ),
+                onPressed: _hasRated ? null : () => _onStarTap(index + 1),
+              );
+            }),
           ),
 
-          SizedBox(height: 20),
-          // Expandable section for 'Things to Do'
-          ExpansionTile(
-            title: Text('Things to Do'),
-            children: <Widget>[
-              // List of activities can be added here
-            ],
-            onExpansionChanged: (value) {
+          OptionCard(
+            icon: Icons.history_outlined,
+            title: 'History',
+            onTap: () {
               setState(() {
-                isThingsToDoExpanded = value; // Update state for expansion
+                isHistory = !isHistory;
+                isThingsToDoExpanded = false;
+                isGoNowExpanded = false;
               });
             },
+            child: AnimatedContainer(
+              duration: Duration(milliseconds: 300),
+              height: isHistory ? 180.0 : 0.0,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'The Grand Canal in Taguig, also known as the Venice Grand Canal Mall, is famous for its Venetian-inspired architecture and gondola rides. Opened in 2015, it’s a favorite spot for both locals and tourists.',
+                  style: TextStyle(fontSize: 16, height: 1.5),
+                  textAlign: TextAlign.justify,
+                ),
+              ),
+            ),
           ),
           // Expandable section for 'Go Now'
-          ExpansionTile(
-            title: Text('Go Now'),
-            children: <Widget>[
-              // Navigation options can be added here
-            ],
-            onExpansionChanged: (value) {
+          OptionCard(
+            icon: Icons.restaurant_menu_outlined,
+            title: 'Culinary Sights',
+            onTap: () {
               setState(() {
-                isGoNowExpanded = value; // Update state for expansion
+                isThingsToDoExpanded = !isThingsToDoExpanded;
+                isGoNowExpanded = false;
+                isHistory = false;
               });
             },
+            child: AnimatedContainer(
+              duration: Duration(milliseconds: 300),
+              height: isThingsToDoExpanded ? 250.0 : 0.0,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildCulinaryImage(
+                      context,
+                      imagePath: 'assets/images/tongyang.jpg',
+                      title: 'Tong Yang Venice McKinley',
+                      description: 'Enjoy unlimited hotpot and grill with a beautiful view of Venice Grand Canal.',
+                      address: 'G/F, Venice Grand Canal Mall, McKinley Hill Dr, Taguig City 1630 Metro Manila',
+                      coordinates: LatLng(14.53418, 121.05061),
+                    ),
+                    _buildCulinaryImage(
+                      context,
+                      imagePath: 'assets/images/lous.jpg',
+                      title: 'Mama Lous Italian Kitchen',
+                      description: 'Authentic Italian dishes served in the heart of Venice Grand Canal Mall.',
+                      address: 'Mckinley Hills, Venice Grand Canal Mall, Unit A - 106, Ground Floor, Taguig, Metro Manila',
+                      coordinates: LatLng(14.53434, 121.05096),
+                    ),
+                    _buildCulinaryImage(
+                      context,
+                      imagePath: 'assets/images/ramenkuroda.jpg',
+                      title: 'Ramen Kuroda',
+                      description: 'Specializes in various ramen styles, offering rich broths and authentic Japanese flavors.',
+                      address: 'Ground Floor, Venice Grand Canal Mall, McKinley Hill, Taguig City',
+                      coordinates: LatLng(14.53384, 121.05111),
+                    ),
+                    _buildCulinaryImage(
+                      context,
+                      imagePath: 'assets/images/tgi.jpg',
+                      title: "TGI Fridays",
+                      description: 'A casual dining chain known for its vibrant atmosphere, signature cocktails, and diverse menu.',
+                      address: 'Ground Floor, Venice Grand Canal Mall, McKinley Hill, Taguig City',
+                      coordinates: LatLng(14.53346, 121.05083),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
           // Expandable section for 'History'
-          ExpansionTile(
-            title: Text('History'),
-            children: <Widget>[
-              // Historical information can be added here
-            ],
-            onExpansionChanged: (value) {
-              setState(() {
-                isHistory = value; // Update state for expansion
-              });
+          // Go Now Section (Navigate to VeniceMap)
+          OptionCard(
+            icon: Icons.directions,
+            title: 'Go Now',
+            onTap: () async {
+              // Replace 'yourSpotId' with the actual spotId you want to update
+              final spotId = 'venice_grand_canal'; // Make sure to get the correct spotId
+
+              // Fetch the current visitCount from the database
+              final currentVisitCount = await fetchVisitCountFromDatabase(spotId);
+
+              // Increment visitCount and update in database
+              await updateVisitCountInDatabase(spotId, currentVisitCount + 1);
+
+              // When tapped, navigate to VeniceMap directly
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => VeniceMap(),
+                ),
+              );
             },
+            child: SizedBox(), // Remove the container and leave an empty child
           ),
         ],
       ),
@@ -332,6 +381,80 @@ class _VenicePageState extends State<VenicePage> {
           BottomNavigationBarItem(icon: Icon(Icons.comment), label: 'Comments'),
         ],
         onTap: _onNavBarTap, // Handle navigation bar tap
+      ),
+    );
+  }
+}
+
+Widget _buildCulinaryImage(BuildContext context,
+    {required String imagePath,
+      required String title,
+      required String description,
+      required String address,
+      required LatLng coordinates}) {
+  return Padding(
+    padding: const EdgeInsets.all(8.0),
+    child: Column(
+      children: [
+        GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => VeniceMap()
+              ),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(15.0),
+            child: Image.asset(
+              imagePath,
+              height: 150,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class OptionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final Widget child;
+
+  const OptionCard({
+    Key? key,
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    required this.child,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(icon),
+            title: Text(title),
+            trailing: Icon(Icons.arrow_drop_down),
+            onTap: onTap,
+          ),
+          child,
+        ],
       ),
     );
   }

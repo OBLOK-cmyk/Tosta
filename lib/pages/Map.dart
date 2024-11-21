@@ -235,7 +235,11 @@ class _MapPageState extends State<MapPage> {
 
       ),
       body: _loading
-          ? Center(child: CircularProgressIndicator())
+          ? Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.red), // Set the color here
+        ),
+      )
           : Listener(
         onPointerDown: (_) {
           _isMapInteracted = true;

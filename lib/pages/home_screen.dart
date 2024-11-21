@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:untitled/widgets/app_banner.dart';
 
 import 'package:untitled/utils/color_utils.dart'; // Import if you have hex color utility
 
@@ -59,7 +58,6 @@ class _HomeScreenState extends State<HomeScreen> {
               child: SingleChildScrollView(
                 child: Column(
                   children: const <Widget>[
-                    AppBanner(),
                     SizedBox(height: 30),
 
                   ],

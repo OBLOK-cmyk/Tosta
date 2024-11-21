@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
+import 'package:intl/intl.dart';
 
 // Ensure Firebase is initialized before running the app
 void main() async {
@@ -14,78 +15,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Venice Grand Canal Comments',
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: VenicePage(spot: TouristSpot(name: 'Venice Grand Canal', imageUrl: 'image_url_here', description: 'Description here', id: 'venice_spot_123')), // Provide a sample tourist spot here
     );
   }
 }
-
-class TouristSpot {
-  final String name;
-  final String imageUrl;
-  final String description;
-  final String id;
-
-  TouristSpot({required this.name, required this.imageUrl, required this.description, required this.id});
-}
-
-class VenicePage extends StatefulWidget {
-  final TouristSpot spot;
-
-  VenicePage({Key? key, required this.spot}) : super(key: key);
-
-  @override
-  _VenicePageState createState() => _VenicePageState();
-}
-
-class _VenicePageState extends State<VenicePage> {
-  bool isFavorite = false; // Track favorite status
-
-  // Method to handle favorite tap
-  void _onFavoriteTap() {
-    setState(() {
-      isFavorite = !isFavorite; // Toggle favorite status
-    });
-  }
-
-  // Your existing star rating widget method
-  Widget _buildStarRating() {
-    // Implement your star rating widget
-    return Container(); // Replace with your star rating code
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.spot.name), // Display tourist spot name
-        actions: [
-          IconButton(
-            icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border),
-            onPressed: _onFavoriteTap, // Handle favorite tap
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Image.network(widget.spot.imageUrl), // Tourist spot image
-            SizedBox(height: 10),
-            Text(widget.spot.description), // Tourist spot description
-            SizedBox(height: 10),
-            _buildStarRating(), // Star rating widget
-            SizedBox(height: 20),
-            CommentVenice(spotId: widget.spot.id), // Pass the spotId to CommentVenice
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class CommentVenice extends StatefulWidget {
   final String spotId;
 
@@ -98,12 +33,21 @@ class CommentVenice extends StatefulWidget {
 class _CommentVeniceState extends State<CommentVenice> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _commentController = TextEditingController();
+  final FirebaseAuth _auth = FirebaseAuth
+      .instance; // Firebase Authentication instance
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Venice Grand Canal Comments'),
+        title: Text(
+          'Comments',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: IconThemeData(color: Colors.black),
@@ -113,13 +57,14 @@ class _CommentVeniceState extends State<CommentVenice> {
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore
-                  .collection('commentsVenice') // Firestore collection for Venice comments
-                  .where('spotId', isEqualTo: widget.spotId) // Query comments by spotId
+                  .collection('comments')
+                  .where('spotId', isEqualTo: widget.spotId)
                   .orderBy('timestamp', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
+                  return Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.red.shade800),
+                  ));
                 }
 
                 if (snapshot.hasError) {
@@ -136,74 +81,117 @@ class _CommentVeniceState extends State<CommentVenice> {
                 final comments = snapshot.data!.docs;
                 print('Number of comments: ${comments.length}');
 
-                return ListView.builder(
+                return ListView.separated(
                   itemCount: comments.length,
+                  separatorBuilder: (context, index) => Divider(),
+                  // Horizontal line between comments
                   itemBuilder: (context, index) {
                     final comment = comments[index];
-                    return ListTile(
-                      title: Text(comment['text']),
-                      subtitle: Text(
-                        comment['timestamp'] != null
-                            ? comment['timestamp'].toDate().toString()
-                            : 'No timestamp',
-                        style: TextStyle(fontSize: 12.0),
-                      ),
+                    final userId = comment['userId'] ?? 'Anonymous';
+                    final message = comment['message'] ?? 'No message';
+                    final timestamp = comment['timestamp'];
+
+                    // Safely check for imageUrl
+                    final data = comment.data() as Map<String,
+                        dynamic>?; // Cast to Map
+                    final imageUrl = data != null &&
+                        data.containsKey('imageUrl')
+                        ? data['imageUrl']
+                        : null;
+
+                    // Mask user ID
+                    String maskedUserId = _maskUserId(userId);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ListTile(
+                          leading: Icon(Icons.account_circle),
+                          // Keep profile icon as is
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  maskedUserId,
+                                  style: TextStyle(fontSize: 16.0,
+                                      fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow
+                                      .ellipsis, // Prevent overflow
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                timestamp != null
+                                    ? _timeAgo(timestamp.toDate())
+                                    : 'No timestamp',
+                                style: TextStyle(
+                                    fontSize: 12.0, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text(message),
+                        ),
+                        // Display the uploaded photo after the ListTile
+                        // Safely display the uploaded photo after the ListTile
+                        (imageUrl != null && imageUrl.isNotEmpty)
+                            ? Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            // Apply border radius
+                            child: Image.network(
+                              imageUrl,
+                              width: 250,
+                              height: 250,
+                              fit: BoxFit
+                                  .cover, // Ensure the image fits nicely within the box
+                            ),
+                          ),
+                        )
+                            : SizedBox(), // If no image, show nothing
+                      ],
                     );
                   },
                 );
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    decoration: InputDecoration(
-                      hintText: 'Write a comment...',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.send),
-                  onPressed: _postComment,
-                ),
-              ],
-            ),
-          ),
+
         ],
       ),
     );
   }
 
-  void _postComment() async {
-    String commentText = _commentController.text.trim();
-    if (commentText.isNotEmpty) {
-      final user = FirebaseAuth.instance.currentUser; // Check authentication
-      if (user == null) {
-        print("User is not authenticated");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('You must be logged in to post a comment.')),
-        );
-        return;
-      }
+// Function to convert the timestamp to a human-readable format like "2 hours ago"
+  String _timeAgo(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
 
-      try {
-        await _firestore.collection('commentsVenice').add({
-          'spotId': widget.spotId,
-          'text': commentText,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-        _commentController.clear(); // Clear the text field after posting
-      } catch (e) {
-        print("Error posting comment: ${e.toString()}");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error posting comment: ${e.toString()}')),
-        );
-      }
+    if (difference.inDays > 365) {
+      return '${(difference.inDays / 365).floor()} year${(difference.inDays /
+          365).floor() > 1 ? 's' : ''} ago';
+    } else if (difference.inDays > 30) {
+      return '${(difference.inDays / 30).floor()} month${(difference.inDays /
+          30).floor() > 1 ? 's' : ''} ago';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} hour${difference.inHours > 1
+          ? 's'
+          : ''} ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} minute${difference.inMinutes > 1
+          ? 's'
+          : ''} ago';
+    } else {
+      return 'Just now';
     }
+  }
+
+// Function to mask the userId
+  String _maskUserId(String userId) {
+    if (userId.length <= 2)
+      return userId; // In case userId is too short, return as is.
+    return userId[0] + '*****' + userId[userId.length - 1];
   }
 }

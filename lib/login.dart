@@ -3,11 +3,14 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:untitled/forgot.dart';
+import 'package:untitled/pages/preferences.dart';
 import 'package:untitled/pages/tourist_screen.dart';
 import 'package:untitled/signup.dart';
 import 'package:untitled/verifyemail.dart';
 import 'package:untitled/widgets/admin.dart';
 import 'package:untitled/widgets/business_reg.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -22,8 +25,66 @@ class _LoginState extends State<Login> {
 
   bool isLoading = false;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref(); // Updated line
-  final String adminEmail = ''; // Replace with your admin email
-  final String adminPassword = ''; // Replace with your admin password
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final String adminEmail = 'tosta@gmail.com'; // Replace with your admin email
+  final String adminPassword = 'tostaILoveTaguig'; // Replace with your admin password
+
+  @override
+  void initState() {
+    super.initState();
+    checkUserPreferences();
+  }
+  Future<void> checkUserPreferences() async {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      // Try to retrieve the user's document from Firestore
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+
+      if (userDoc.exists) {
+        // Get the user data
+        var userData = userDoc.data() as Map<String, dynamic>?;
+
+        // Check if preferences exist, only if userData is not null
+        bool hasPlacePreferences = userData?.containsKey('placePreferences') ?? false;
+        bool hasFoodPreferences = userData?.containsKey('foodPreferences') ?? false;
+
+        if (hasPlacePreferences && hasFoodPreferences) {
+          // Preferences exist, navigate to the tourist screen
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TouristSpotsApp(),
+            ),
+          );
+        } else {
+          // Preferences are missing, initialize the fields and navigate to preferences page
+          if (!hasPlacePreferences || !hasFoodPreferences) {
+            await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+              'placePreferences': [],
+              'foodPreferences': [],
+            });
+          }
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PreferencesPage(),
+            ),
+          );
+        }
+      } else {
+        // Document does not exist - first login, navigate to preferences page
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PreferencesPage(),
+          ),
+        );
+      }
+    }
+  }
+
 
   signIn() async {
     setState(() {
@@ -48,7 +109,7 @@ class _LoginState extends State<Login> {
           });
 
           Get.snackbar('Success', 'Login successful');
-          Get.offAll(() => TouristSpotsApp());
+          checkUserPreferences();
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -166,22 +227,8 @@ class _LoginState extends State<Login> {
                       onPressed: () => Get.to(() => Forgot()),
                       child: Text("Forgot your password?", style: TextStyle(color: Colors.black, fontSize: 13)),
                     ),
-                    SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: () => Get.to(() => BusinessReg(
-                        onRegister: (businessData) {
-                          print("Business registered: $businessData");
-                          Get.snackbar("Success", "Business registered successfully!");
-                        },
-                      )),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: 135, vertical: 15),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      ),
-                      child: Text("Business Registration"),
-                    ),
+                    SizedBox(height: 10),
+                   
                   ],
                 ),
               ),

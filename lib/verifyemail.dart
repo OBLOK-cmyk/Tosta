@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:untitled/login.dart';
+import 'package:untitled/signup.dart';
+import 'dart:async';
 import 'package:untitled/wrapper.dart';
 
 class VerifyEmail extends StatefulWidget {
@@ -11,11 +13,29 @@ class VerifyEmail extends StatefulWidget {
   State<VerifyEmail> createState() => _VerifyEmailState();
 }
 
-class _VerifyEmailState extends State<VerifyEmail> {
+class _VerifyEmailState extends State<VerifyEmail> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
   @override
   void initState() {
     super.initState();
     sendVerificationLink();
+    // Animation Controller for growing/shrinking effect
+    _controller = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat(reverse: true); // Repeats the animation in reverse
+
+    // Tween Animation for scaling effect
+    _animation = Tween<double>(begin: 0.9, end: 1.2).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   // Function to send email verification link
@@ -71,114 +91,71 @@ class _VerifyEmailState extends State<VerifyEmail> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white, // White background
-      body: Stack(
-        children: [
-          // Gradient background for a modern look
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white, // Start with white at the top
-                  Colors.redAccent, // Transition to red at the bottom
-                ],
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            GestureDetector(
+              onTap: reload, // Reload on icon tap
+              child: AnimatedBuilder(
+                animation: _animation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _animation.value, // Apply scaling animation
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.red.shade800, // Icon background color
+                      ),
+                      padding: const EdgeInsets.all(20),
+                      child: const Icon(
+                        Icons.verified_user , // Verification icon
+                        size: 60,
+                        color: Colors.white,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(28.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Verification icon with shadow for emphasis
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 20,
-                        offset: Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.red[700],
-                    child: Icon(
-                      Icons.email_outlined,
-                      color: Colors.white,
-                      size: 50,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 30), // Space between icon and text
+            const SizedBox(height: 30),
 
-                // Instruction text with improved typography
-                const Text(
-                  'Check your email for the verification link.\n'
-                      'Once verified, click the button below to reload.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey, // Use gray for secondary text
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-                const SizedBox(height: 40), // Space between text and buttons
-
-                // Reload and Verify button
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red[700], // Red button
-                    foregroundColor: Colors.white, // White text on the button
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 40, vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30), // Rounded corners
-                    ),
-                    elevation: 10, // Add shadow for a floating effect
-                  ),
-                  onPressed: reload, // Reload and check verification status
-                  child: const Text(
-                    'Reload fand Verify',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-
-                const SizedBox(height: 20), // Space between buttons
-
-                // Go to Login button with a subtle gray shade
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey[700], // Gray button
-                    foregroundColor: Colors.white, // White text on the button
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 40, vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30), // Rounded corners
-                    ),
-                    elevation: 5, // Subtle shadow for button
-                  ),
-                  onPressed: () {
-                    Get.offAll(Login()); // Navigate to Login
-                  },
-                  child: const Text(
-                    'Go to Login',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              ],
+            // Instructional text
+            const Text(
+              'Tap the icon to reload and check verification status.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.red[700], // Red floating button
-        onPressed: reload, // On pressing, it reloads the user's status
-        child: const Icon(Icons.refresh),
+
+            const SizedBox(height: 40),
+
+            // Go to Login button
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800, // Button color
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+              ),
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => Signup()), // Replace with your signup page widget
+                );
+              },
+              child: const Text(
+                'Go Back',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

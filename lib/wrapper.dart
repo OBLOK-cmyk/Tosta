@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:untitled/homepage.dart';
 import 'package:untitled/login.dart';
+import 'package:untitled/pages/preferences.dart';
 import 'package:untitled/pages/tourist_screen.dart';
 import 'package:untitled/verifyemail.dart';
 
@@ -30,7 +31,7 @@ class _WrapperState extends State<Wrapper> {
               if (user != null && !user.emailVerified) {
                 return VerifyEmail(); // Go to email verification screen
               } else {
-                return TouristSpotsApp(); // Go to the main app
+                return PreferencesPage(); // Go to the main app
               }
             } else {
               return Login(); // Go to the login screen if not authenticated
